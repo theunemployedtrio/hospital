@@ -1,373 +1,396 @@
-from flask import Flask, render_template, url_for, request, session, redirect
-from flask_sqlalchemy import SQLAlchemy
+# app.py
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+from models import db, User, Doctor, Patient, Appointment, Treatment, Department, create_db_and_admin
+from datetime import datetime
+#import os
+
+#BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
-
-@app.route("/" , methods = ["POST", "GET"])
-
-
-
-         
-from flask import Flask, render_template, redirect, url_for, flash, request
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, Doctor, Patient, Department, Appointment, Treatment, DoctorAvailability
-from datetime import datetime, timedelta
-
-app = Flask(__name__)
-
-# Configuration
-app.config['SECRET_KEY'] = 'your-secret-key-change-this-in-production'
+app.config['SECRET_KEY'] = 'change_this_secret'  # change before final submission
 app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///hospital.db'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-# Initialize database with app
+# initialize db once here
 db.init_app(app)
-
-# Initialize Flask-Login
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'  # Redirect to login if user not authenticated
-login_manager.login_message = 'Please log in to access this page.'
-login_manager.login_message_category = 'warning'
-
-# User loader for Flask-Login
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
+# create tables and default admin
+create_db_and_admin(app)
 
 
-# Initialize database and create admin
-def init_db():
-    """Create database tables and admin user if they don't exist"""
-    with app.app_context():
-        # Create all tables
-        db.create_all()
-        
-        # Check if admin already exists
-        admin = User.query.filter_by(username='admin').first()
-        if not admin:
-            # Create admin user
-            admin = User(
-                username='admin',
-                email='admin@hospital.com',
-                password=generate_password_hash('admin123'),
-                role='admin'
-            )
-            db.session.add(admin)
-            
-            # Create some default departments
-            departments_data = [
-                {'name': 'Cardiology', 'description': 'Heart and cardiovascular system care'},
-                {'name': 'Neurology', 'description': 'Brain and nervous system disorders'},
-                {'name': 'Orthopedics', 'description': 'Bone, joint, and muscle treatment'},
-                {'name': 'Pediatrics', 'description': 'Healthcare for infants, children, and adolescents'},
-                {'name': 'General Medicine', 'description': 'General health and wellness'},
-                {'name': 'Dermatology', 'description': 'Skin, hair, and nail conditions'},
-                {'name': 'Oncology', 'description': 'Cancer diagnosis and treatment'},
-            ]
-            
-            for dept_data in departments_data:
-                dept = Department(name=dept_data['name'], description=dept_data['description'])
-                db.session.add(dept)
-            
-            # Commit changes
-            db.session.commit()
-            print("=" * 50)
-            print("DATABASE INITIALIZED SUCCESSFULLY!")
-            print("=" * 50)
-            print("Admin Login Credentials:")
-            print("Username: admin")
-            print("Password: admin123")
-            print("=" * 50)
+# ---------- Helpers ----------
+def login_required(role=None):
+    """
+    Use like:
+       guard = login_required('admin')()
+       if guard: return guard
+    This avoids decorator complexity for beginners.
+    """
+    def inner_guard():
+        if 'user_id' not in session:
+            flash('Please login first.')
+            return redirect(url_for('login'))
+        if role and session.get('role') != role:
+            flash('Access denied.')
+            return redirect(url_for('home'))
+        return None
+    return inner_guard
 
 
-# ============================================
-# BASIC ROUTES
-# ============================================
+def get_current_user():
+    if 'user_id' in session:
+        return User.query.get(session['user_id'])
+    return None
 
+
+# ---------- Routes ----------
 @app.route('/')
-def index():
-    """Home page"""
-    return render_template('index.html')
+def home():
+    # pass user so base.html can show username safely
+    return render_template('home.html', user=get_current_user())
 
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    """Login page for all users"""
-    # If user already logged in, redirect to dashboard
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
-    
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        # Find user in database
-        user = User.query.filter_by(username=username).first()
-        
-        # Check if user exists and password is correct
-        if user and check_password_hash(user.password, password):
-            # Check if doctor/patient is active
-            if user.role == 'doctor':
-                if not user.doctor_profile or not user.doctor_profile.is_active:
-                    flash('Your account has been deactivated. Contact admin.', 'danger')
-                    return redirect(url_for('login'))
-            elif user.role == 'patient':
-                if not user.patient_profile or not user.patient_profile.is_active:
-                    flash('Your account has been deactivated. Contact admin.', 'danger')
-                    return redirect(url_for('login'))
-            
-            # Login successful
-            login_user(user)
-            flash(f'Welcome back, {user.username}!', 'success')
-            
-            # Redirect to next page if exists, otherwise dashboard
-            next_page = request.args.get('next')
-            return redirect(next_page) if next_page else redirect(url_for('dashboard'))
-        else:
-            flash('Invalid username or password. Please try again.', 'danger')
-    
-    return render_template('login.html')
-
-
+# Register (Patient)
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    """Patient registration page"""
-    # If user already logged in, redirect to dashboard
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
-    
     if request.method == 'POST':
-        username = request.form.get('username')
-        email = request.form.get('email')
-        password = request.form.get('password')
-        confirm_password = request.form.get('confirm_password')
-        full_name = request.form.get('full_name')
-        contact = request.form.get('contact')
-        
-        # Validation
-        if password != confirm_password:
-            flash('Passwords do not match!', 'danger')
+        username = request.form['username'].strip()
+        password = request.form['password'].strip()
+        fullname = request.form['fullname'].strip()
+        contact = request.form.get('contact', '').strip()
+        if not username or not password or not fullname:
+            flash('Please fill required fields.')
             return redirect(url_for('register'))
-        
-        # Check if username already exists
         if User.query.filter_by(username=username).first():
-            flash('Username already taken. Please choose another.', 'danger')
+            flash('Username already exists.')
             return redirect(url_for('register'))
-        
-        # Check if email already exists
-        if User.query.filter_by(email=email).first():
-            flash('Email already registered. Please use another.', 'danger')
-            return redirect(url_for('register'))
-        
-        # Create new patient user
-        new_user = User(
-            username=username,
-            email=email,
-            password=generate_password_hash(password),
-            role='patient'
-        )
-        db.session.add(new_user)
+        u = User(username=username, role='patient')
+        u.set_password(password)
+        db.session.add(u)
         db.session.commit()
-        
-        # Create patient profile
-        new_patient = Patient(
-            user_id=new_user.id,
-            full_name=full_name,
-            contact=contact
-        )
-        db.session.add(new_patient)
+        p = Patient(user_id=u.id, fullname=fullname, contact=contact)
+        db.session.add(p)
         db.session.commit()
-        
-        flash('Registration successful! You can now log in.', 'success')
+        flash('Registration successful. Please login.')
         return redirect(url_for('login'))
-    
     return render_template('register.html')
 
 
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    """Main dashboard - redirects based on user role"""
-    if current_user.role == 'admin':
-        return redirect(url_for('admin_dashboard'))
-    elif current_user.role == 'doctor':
-        return redirect(url_for('doctor_dashboard'))
-    elif current_user.role == 'patient':
-        return redirect(url_for('patient_dashboard'))
-    else:
-        flash('Invalid user role', 'danger')
-        return redirect(url_for('logout'))
+# Login (all roles)
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password'].strip()
+        user = User.query.filter_by(username=username).first()
+        if user and user.check_password(password):
+            session['user_id'] = user.id
+            session['role'] = user.role
+            flash('Logged in successfully.')
+            if user.role == 'admin':
+                return redirect(url_for('admin_dashboard'))
+            elif user.role == 'doctor':
+                return redirect(url_for('doctor_dashboard'))
+            else:
+                return redirect(url_for('patient_dashboard'))
+        else:
+            flash('Invalid credentials.')
+            return redirect(url_for('login'))
+    return render_template('login.html')
 
 
 @app.route('/logout')
-@login_required
 def logout():
-    """Logout user"""
-    logout_user()
-    flash('You have been logged out successfully.', 'info')
-    return redirect(url_for('login'))
+    session.clear()
+    flash('Logged out.')
+    return redirect(url_for('home'))
 
-
-# ============================================
-# ADMIN ROUTES (Will be implemented next)
-# ============================================
-
-@app.route('/admin/dashboard')
-@login_required
+# ---------------- Admin ----------------
+@app.route('/admin')
 def admin_dashboard():
-    """Admin dashboard"""
-    if current_user.role != 'admin':
-        flash('Access denied. Admin only.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    # Get statistics for dashboard
-    total_doctors = Doctor.query.filter_by(is_active=True).count()
-    total_patients = Patient.query.filter_by(is_active=True).count()
-    total_appointments = Appointment.query.count()
-    today = datetime.today().date()
-    today_appointments = Appointment.query.filter_by(appointment_date=today).count()
-    
-    # Get recent appointments
-    recent_appointments = Appointment.query.order_by(
-        Appointment.created_at.desc()
-    ).limit(10).all()
-    
-    # Get all departments
-    departments = Department.query.all()
-    
-    return render_template('admin/dashboard.html',
-                         total_doctors=total_doctors,
-                         total_patients=total_patients,
-                         total_appointments=total_appointments,
-                         today_appointments=today_appointments,
-                         recent_appointments=recent_appointments,
-                         departments=departments)
+    guard = login_required('admin')()
+    if guard:
+        return guard
+    doctors = Doctor.query.all()
+    patients = Patient.query.all()
+    appointments = Appointment.query.order_by(Appointment.date.desc()).all()
+    return render_template('admin_dashboard.html', doctors=doctors, patients=patients, appointments=appointments)
 
 
-# ============================================
-# DOCTOR ROUTES (Will be implemented next)
-# ============================================
-
-@app.route('/doctor/dashboard')
-@login_required
-def doctor_dashboard():
-    """Doctor dashboard"""
-    if current_user.role != 'doctor':
-        flash('Access denied. Doctor only.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    doctor = current_user.doctor_profile
-    
-    # Get today's appointments
-    today = datetime.today().date()
-    today_appointments = Appointment.query.filter_by(
-        doctor_id=doctor.id,
-        appointment_date=today
-    ).all()
-    
-    # Get upcoming appointments (next 7 days)
-    next_week = today + timedelta(days=7)
-    upcoming_appointments = Appointment.query.filter(
-        Appointment.doctor_id == doctor.id,
-        Appointment.appointment_date >= today,
-        Appointment.appointment_date <= next_week,
-        Appointment.status == 'Booked'
-    ).order_by(Appointment.appointment_date, Appointment.appointment_time).all()
-    
-    # Get all patients assigned to this doctor
-    patients = Patient.query.join(Appointment).filter(
-        Appointment.doctor_id == doctor.id
-    ).distinct().all()
-    
-    return render_template('doctor/dashboard.html',
-                         doctor=doctor,
-                         today_appointments=today_appointments,
-                         upcoming_appointments=upcoming_appointments,
-                         patients=patients)
+@app.route('/admin/create_doctor', methods=['GET', 'POST'])
+def create_doctor():
+    guard = login_required('admin')()
+    if guard:
+        return guard
+    if request.method == 'POST':
+        username = request.form['username'].strip()
+        password = request.form['password'].strip()
+        fullname = request.form['fullname'].strip()
+        specialization = request.form['specialization'].strip()
+        if User.query.filter_by(username=username).first():
+            flash('Username exists.')
+            return redirect(url_for('create_doctor'))
+        u = User(username=username, role='doctor')
+        u.set_password(password)
+        db.session.add(u)
+        db.session.commit()
+        d = Doctor(user_id=u.id, fullname=fullname, specialization=specialization, availability='')
+        db.session.add(d)
+        db.session.commit()
+        flash('Doctor created.')
+        return redirect(url_for('admin_dashboard'))
+    return render_template('create_doctor.html')
 
 
-# ============================================
-# PATIENT ROUTES (Will be implemented next)
-# ============================================
+@app.route('/admin/delete_doctor/<int:doctor_id>', methods=['POST'])
+def delete_doctor(doctor_id):
+    guard = login_required('admin')()
+    if guard:
+        return guard
+    d = Doctor.query.get(doctor_id)
+    if not d:
+        flash('Doctor not found.')
+        return redirect(url_for('admin_dashboard'))
+    # optionally delete linked user or appointments (kept simple)
+    db.session.delete(d)
+    db.session.commit()
+    flash('Doctor removed.')
+    return redirect(url_for('admin_dashboard'))
 
-@app.route('/patient/dashboard')
-@login_required
+# ---------------- Admin: Update Doctor ----------------
+@app.route('/admin/update_doctor/<int:doctor_id>', methods=['GET', 'POST'])
+def update_doctor(doctor_id):
+    guard = login_required('admin')()
+    if guard: return guard
+    
+    doctor = Doctor.query.get(doctor_id)
+    if not doctor:
+        flash("Doctor not found.")
+        return redirect(url_for('admin_dashboard'))
+
+    if request.method == 'POST':
+        doctor.fullname = request.form['fullname']
+        doctor.specialization = request.form['specialization']
+        db.session.commit()
+        flash("Doctor updated successfully.")
+        return redirect(url_for('admin_dashboard'))
+
+    return render_template('update_doctor.html', doctor=doctor)
+
+@app.route('/admin/search_patient')
+def search_patient():
+    guard = login_required('admin')()
+    if guard: return guard
+
+    q = request.args.get('q', '').strip()
+    patients = []
+
+    if q:
+        patients = Patient.query.filter(
+            (Patient.fullname.ilike(f"%{q}%")) |
+            (Patient.contact.ilike(f"%{q}%"))
+        ).all()
+
+    return render_template('search_patient.html', patients=patients, q=q)
+
+@app.route('/admin/delete_patient/<int:patient_id>', methods=['POST'])
+def delete_patient(patient_id):
+    guard = login_required('admin')()
+    if guard: return guard
+
+    p = Patient.query.get(patient_id)
+    if not p:
+        flash("Patient not found.")
+        return redirect(url_for('admin_dashboard'))
+
+    db.session.delete(p)
+    db.session.commit()
+    flash("Patient deleted.")
+    return redirect(url_for('admin_dashboard'))
+
+
+# ---------------- Patient ----------------
+@app.route('/patient')
 def patient_dashboard():
-    """Patient dashboard"""
-    if current_user.role != 'patient':
-        flash('Access denied. Patient only.', 'danger')
-        return redirect(url_for('dashboard'))
-    
-    patient = current_user.patient_profile
-    
-    # Get all departments
+    guard = login_required('patient')()
+    if guard:
+        return guard
+    user = get_current_user()
+    patient = Patient.query.filter_by(user_id=user.id).first()
     departments = Department.query.all()
-    
-    # Get upcoming appointments
-    today = datetime.today().date()
-    upcoming_appointments = Appointment.query.filter(
-        Appointment.patient_id == patient.id,
-        Appointment.appointment_date >= today,
-        Appointment.status == 'Booked'
-    ).order_by(Appointment.appointment_date, Appointment.appointment_time).all()
-    
-    # Get past appointments with treatment
-    past_appointments = Appointment.query.filter(
-        Appointment.patient_id == patient.id,
-        Appointment.status == 'Completed'
-    ).order_by(Appointment.appointment_date.desc()).limit(10).all()
-    
-    return render_template('patient/dashboard.html',
-                         patient=patient,
-                         departments=departments,
-                         upcoming_appointments=upcoming_appointments,
-                         past_appointments=past_appointments)
+    doctors = Doctor.query.all()
+    my_appts = Appointment.query.filter_by(patient_id=patient.id).order_by(Appointment.date.desc()).all()
+    return render_template('patient_dashboard.html', patient=patient, doctors=doctors, departments=departments, appts=my_appts)
+
+@app.route('/patient/edit', methods=['GET', 'POST'])
+def patient_edit():
+    guard = login_required('patient')()
+    if guard: return guard
+
+    user = get_current_user()
+    patient = Patient.query.filter_by(user_id=user.id).first()
+
+    if request.method == 'POST':
+        patient.fullname = request.form['fullname']
+        patient.contact = request.form['contact']
+        db.session.commit()
+        flash("Profile updated.")
+        return redirect(url_for('patient_dashboard'))
+
+    return render_template('patient_edit.html', patient=patient)
+
+@app.route('/search_doctors', methods=['GET'])
+def search_doctors():
+    q = request.args.get('q', '').strip()
+    specialization = request.args.get('specialization', '').strip()
+    if q:
+        doctors = Doctor.query.filter(Doctor.fullname.ilike(f'%{q}%')).all()
+    elif specialization:
+        doctors = Doctor.query.filter(Doctor.specialization.ilike(f'%{specialization}%')).all()
+    else:
+        doctors = Doctor.query.all()
+    return render_template('search_results.html', doctors=doctors)
 
 
-# ============================================
-# ERROR HANDLERS
-# ============================================
+@app.route('/book/<int:doctor_id>', methods=['GET', 'POST'])
+def book(doctor_id):
+    guard = login_required('patient')()
+    if guard:
+        return guard
+    user = get_current_user()
+    patient = Patient.query.filter_by(user_id=user.id).first()
+    doctor = Doctor.query.get(doctor_id)
+    if not doctor:
+        flash('Doctor not found.')
+        return redirect(url_for('patient_dashboard'))
+    if request.method == 'POST':
+        date_str = request.form['date'].strip()
+        time_slot = request.form['time'].strip()
+        if not date_str or not time_slot:
+            flash('Please select date and time.')
+            return redirect(url_for('book', doctor_id=doctor_id))
+        try:
+            dt = datetime.strptime(date_str, '%Y-%m-%d').date()
+        except ValueError:
+            flash('Invalid date format. Use YYYY-MM-DD.')
+            return redirect(url_for('book', doctor_id=doctor_id))
+        existing = Appointment.query.filter_by(doctor_id=doctor.id, date=dt, time=time_slot, status='Booked').first()
+        if existing:
+            flash('Slot already booked for this doctor. Choose another.')
+            return redirect(url_for('book', doctor_id=doctor_id))
+        existing_p = Appointment.query.filter_by(patient_id=patient.id, date=dt, time=time_slot, status='Booked').first()
+        if existing_p:
+            flash('You already have an appointment at this time.')
+            return redirect(url_for('book', doctor_id=doctor_id))
+        appt = Appointment(patient_id=patient.id, doctor_id=doctor.id, date=dt, time=time_slot, status='Booked')
+        db.session.add(appt)
+        db.session.commit()
+        flash('Appointment booked successfully.')
+        return redirect(url_for('patient_dashboard'))
+    return render_template('book.html', doctor=doctor)
 
-@app.errorhandler(404)
-def not_found_error(error):
-    return render_template('404.html'), 404
+
+@app.route('/cancel_appointment/<int:appt_id>', methods=['POST'])
+def cancel_appointment(appt_id):
+    guard = login_required('patient')()
+    if guard:
+        return guard
+    appt = Appointment.query.get(appt_id)
+    if not appt:
+        flash('Appointment not found.')
+        return redirect(url_for('patient_dashboard'))
+    user = get_current_user()
+    patient = Patient.query.filter_by(user_id=user.id).first()
+    if appt.patient_id != patient.id:
+        flash('Access denied.')
+        return redirect(url_for('patient_dashboard'))
+    appt.status = 'Cancelled'
+    db.session.commit()
+    flash('Appointment cancelled.')
+    return redirect(url_for('patient_dashboard'))
 
 
-@app.errorhandler(500)
-def internal_error(error):
-    db.session.rollback()
-    return render_template('500.html'), 500
+# ---------------- Doctor ----------------
+@app.route('/doctor')
+def doctor_dashboard():
+    guard = login_required('doctor')()
+    if guard:
+        return guard
+    user = get_current_user()
+    doctor = Doctor.query.filter_by(user_id=user.id).first()
+    appts = Appointment.query.filter_by(doctor_id=doctor.id).order_by(Appointment.date).all()
+    return render_template('doctor_dashboard.html', doctor=doctor, appts=appts)
 
 
-# ============================================
-# RUN APPLICATION
-# ============================================
+@app.route('/doctor/availability/<int:doctor_id>', methods=['GET', 'POST'])
+def doctor_availability(doctor_id):
+    guard = login_required('doctor')()
+    if guard:
+        return guard
+    doc = Doctor.query.get(doctor_id)
+    if request.method == 'POST':
+        slots = request.form.get('availability', '').strip()
+        doc.availability = slots
+        db.session.commit()
+        flash('Availability updated.')
+        return redirect(url_for('doctor_dashboard'))
+    return render_template('doctor_availability.html', doctor=doc)
 
+
+@app.route('/doctor/mark_complete/<int:appt_id>', methods=['GET', 'POST'])
+def mark_complete(appt_id):
+    guard = login_required('doctor')()
+    if guard:
+        return guard
+    appt = Appointment.query.get(appt_id)
+    if not appt:
+        flash('Appointment not found.')
+        return redirect(url_for('doctor_dashboard'))
+    user = get_current_user()
+    doctor = Doctor.query.filter_by(user_id=user.id).first()
+    if appt.doctor_id != doctor.id:
+        flash('Access denied.')
+        return redirect(url_for('doctor_dashboard'))
+    if request.method == 'POST':
+        diagnosis = request.form.get('diagnosis', '').strip()
+        prescription = request.form.get('prescription', '').strip()
+        notes = request.form.get('notes', '').strip()
+        appt.status = 'Completed'
+        db.session.commit()
+        t = Treatment(appointment_id=appt.id, diagnosis=diagnosis, prescription=prescription, notes=notes)
+        db.session.add(t)
+        db.session.commit()
+        flash('Marked completed and treatment saved.')
+        return redirect(url_for('doctor_dashboard'))
+    return render_template('mark_complete.html', appt=appt)
+
+
+# ---------------- View patient history ----------------
+@app.route('/patient_history/<int:patient_id>')
+def patient_history(patient_id):
+    user = get_current_user()
+    if 'user_id' not in session:
+        flash('Login required.')
+        return redirect(url_for('login'))
+    allowed = False
+    if session.get('role') == 'admin':
+        allowed = True
+    elif session.get('role') == 'doctor':
+        allowed = True
+    elif session.get('role') == 'patient':
+        p = Patient.query.filter_by(user_id=user.id).first()
+        if p and p.id == patient_id:
+            allowed = True
+    if not allowed:
+        flash('Access denied.')
+        return redirect(url_for('home'))
+    patient = Patient.query.get(patient_id)
+    appts = Appointment.query.filter_by(patient_id=patient.id).order_by(Appointment.date.desc()).all()
+    # make treatments accessible in template by relationship (SQLAlchemy lazy load)
+    return render_template('patient_history.html', patient=patient, appts=appts)
+
+
+# Run
 if __name__ == '__main__':
-    init_db()
+    # debug True is fine during development. If you had issues with reloader earlier,
+    # use use_reloader=False or set debug=False. For now keep debug=True for helpful errors.
     app.run(debug=True)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-#app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///hospital.db'
-#db = SQLAlchemy(app)
-

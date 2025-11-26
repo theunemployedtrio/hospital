@@ -1,0 +1,20 @@
+{% extends "base.html" %}
+{% block content %}
+  <h4>Mark Appointment #{{ appt.id }} Complete</h4>
+  <p>Patient ID: {{ appt.patient_id }} | Date: {{ appt.date }} | Time: {{ appt.time }}</p>
+  <form method="post">
+    <div class="mb-2">
+      <label class="form-label">Diagnosis</label>
+      <textarea class="form-control" name="diagnosis" rows="2" required></textarea>
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Prescription</label>
+      <textarea class="form-control" name="prescription" rows="2"></textarea>
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Notes</label>
+      <textarea class="form-control" name="notes" rows="2"></textarea>
+    </div>
+    <button class="btn btn-success" type="submit">Save & Mark Completed</button>
+  </form>
+{% endblock %}

@@ -1,0 +1,16 @@
+{% extends "base.html" %}
+{% block content %}
+  <h4>Search Results</h4>
+  <table class="table table-sm">
+    <thead><tr><th>Name</th><th>Specialization</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for d in doctors %}
+      <tr>
+        <td>{{ d.fullname }}</td>
+        <td>{{ d.specialization }}</td>
+        <td><a class="btn btn-sm btn-primary" href="{{ url_for('book', doctor_id=d.id) }}">Book</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

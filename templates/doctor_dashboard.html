@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block content %}
+  <h3>Doctor Dashboard</h3>
+  <p>Dr. {{ doctor.fullname }} | {{ doctor.specialization }}</p>
+
+  <h5>Update Availability (simple text slots)</h5>
+  <form method="post" action="{{ url_for('doctor_availability', doctor_id=doctor.id) }}">
+    <div class="mb-2">
+      <label class="form-label">Enter availability as semicolon-separated slots:</label>
+      <textarea class="form-control" name="availability" rows="3" placeholder="2025-09-01|09:00-09:30;2025-09-02|10:00-10:30">{{ doctor.availability }}</textarea>
+    </div>
+    <button class="btn btn-primary" type="submit">Save Availability</button>
+  </form>
+
+  <h5 class="mt-4">Your Appointments</h5>
+  <table class="table table-sm">
+    <thead><tr><th>ID</th><th>Patient</th><th>Date</th><th>Time</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for a in appts %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.patient_id }}</td>
+        <td>{{ a.date }}</td>
+        <td>{{ a.time }}</td>
+        <td>{{ a.status }}</td>
+        <td>
+          {% if a.status == 'Booked' %}
+            <a class="btn btn-sm btn-success" href="{{ url_for('mark_complete', appt_id=a.id) }}">Mark Complete</a>
+          {% else %}
+            -
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

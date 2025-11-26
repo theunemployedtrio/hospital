@@ -1,0 +1,27 @@
+{% extends "base.html" %}
+{% block content %}
+  <h4>Patient History: {{ patient.fullname }}</h4>
+  <table class="table table-sm">
+    <thead><tr><th>Appt ID</th><th>Date</th><th>Time</th><th>Status</th><th>Diagnosis</th><th>Prescription</th></tr></thead>
+    <tbody>
+      {% for a in appts %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.date }}</td>
+        <td>{{ a.time }}</td>
+        <td>{{ a.status }}</td>
+        <td>
+          {% if a.treatment %}
+            {{ a.treatment.diagnosis }}
+          {% else %}-{% endif %}
+        </td>
+        <td>
+          {% if a.treatment %}
+            {{ a.treatment.prescription }}
+          {% else %}-{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

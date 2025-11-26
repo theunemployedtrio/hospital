@@ -1,140 +1,81 @@
-from flask import Flask, render_template, redirect, url_for, flash, request
-from flask_login import LoginManager, login_user, logout_user, login_required, current_user
-from werkzeug.security import generate_password_hash, check_password_hash
-from models import db, User, Doctor, Patient, Department, Appointment, Treatment, DoctorAvailability
-from datetime import datetime, timedelta
-import os
+# models.py
+from flask_sqlalchemy import SQLAlchemy
 
-app = Flask(__name__)
-app.config['SECRET_KEY'] = 'your-secret-key-here'  # Change this!
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///hospital.db'
-app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+from datetime import datetime
 
-# Initialize extensions
-db.init_app(app)
-login_manager = LoginManager()
-login_manager.init_app(app)
-login_manager.login_view = 'login'
+# single SQLAlchemy instance (do NOT init here)
+db = SQLAlchemy()
 
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
 
-# Create database and admin user
-def init_db():
+class User(db.Model):
+    __tablename__ = 'users'
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    role = db.Column(db.String(20), nullable=False)  # 'admin','doctor','patient'
+
+    def set_password(self, pw):
+        self.password_hash = pw   # store directly
+
+    def check_password(self, pw):
+        return self.password_hash == pw
+
+
+class Department(db.Model):
+    __tablename__ = 'departments'
+    id = db.Column(db.Integer, primary_key=True)
+    name = db.Column(db.String(120), unique=True)
+    description = db.Column(db.Text)
+
+
+class Doctor(db.Model):
+    __tablename__ = 'doctors'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    fullname = db.Column(db.String(120), nullable=False)
+    specialization = db.Column(db.String(120), nullable=False)
+    availability = db.Column(db.Text)  # simple semicolon-separated slots
+
+
+class Patient(db.Model):
+    __tablename__ = 'patients'
+    id = db.Column(db.Integer, primary_key=True)
+    user_id = db.Column(db.Integer, db.ForeignKey('users.id'), nullable=False)
+    fullname = db.Column(db.String(120), nullable=False)
+    contact = db.Column(db.String(50))
+
+
+class Appointment(db.Model):
+    __tablename__ = 'appointments'
+    id = db.Column(db.Integer, primary_key=True)
+    patient_id = db.Column(db.Integer, db.ForeignKey('patients.id'), nullable=False)
+    doctor_id = db.Column(db.Integer, db.ForeignKey('doctors.id'), nullable=False)
+    date = db.Column(db.Date, nullable=False)
+    time = db.Column(db.String(20), nullable=False)  # "09:00-09:30"
+    status = db.Column(db.String(20), default='Booked')  # Booked / Completed / Cancelled
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+
+
+class Treatment(db.Model):
+    __tablename__ = 'treatments'
+    id = db.Column(db.Integer, primary_key=True)
+    appointment_id = db.Column(db.Integer, db.ForeignKey('appointments.id'), nullable=False)
+    diagnosis = db.Column(db.Text)
+    prescription = db.Column(db.Text)
+    notes = db.Column(db.Text)
+
+
+def create_db_and_admin(app):
+    """
+    Create tables programmatically and add a default admin (only if missing).
+    Important: do NOT call db.init_app(app) here (init only once in app.py).
+    """
     with app.app_context():
         db.create_all()
-        
-        # Check if admin exists
-        admin = User.query.filter_by(username='admin').first()
-        if not admin:
-            # Create admin user
-            admin = User(
-                username='admin',
-                email='admin@hospital.com',
-                password=generate_password_hash('admin123'),
-                role='admin'
-            )
+        # create default admin if not exists
+        if not User.query.filter_by(username='admin').first():
+            admin = User(username='admin', role='admin')
+            admin.set_password('admin123')   # change when you submit
             db.session.add(admin)
-            
-            # Create some departments
-            departments = [
-                Department(name='Cardiology', description='Heart and cardiovascular system'),
-                Department(name='Neurology', description='Brain and nervous system'),
-                Department(name='Orthopedics', description='Bones and joints'),
-                Department(name='Pediatrics', description='Child healthcare'),
-                Department(name='General Medicine', description='General health issues')
-            ]
-            for dept in departments:
-                db.session.add(dept)
-            
             db.session.commit()
-            print("Database initialized with admin user!")
-            print("Admin credentials - Username: admin, Password: admin123")
-
-# Routes
-@app.route('/')
-def index():
-    return render_template('index.html')
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
-    
-    if request.method == 'POST':
-        username = request.form.get('username')
-        password = request.form.get('password')
-        
-        user = User.query.filter_by(username=username).first()
-        
-        if user and check_password_hash(user.password, password):
-            login_user(user)
-            flash('Login successful!', 'success')
-            return redirect(url_for('dashboard'))
-        else:
-            flash('Invalid username or password', 'danger')
-    
-    return render_template('login.html')
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    if current_user.is_authenticated:
-        return redirect(url_for('dashboard'))
-    
-    if request.method == 'POST':
-        username = request.form.get('username')
-        email = request.form.get('email')
-        password = request.form.get('password')
-        full_name = request.form.get('full_name')
-        contact = request.form.get('contact')
-        
-        # Check if user exists
-        if User.query.filter_by(username=username).first():
-            flash('Username already exists', 'danger')
-            return redirect(url_for('register'))
-        
-        # Create new patient user
-        user = User(
-            username=username,
-            email=email,
-            password=generate_password_hash(password),
-            role='patient'
-        )
-        db.session.add(user)
-        db.session.commit()
-        
-        # Create patient profile
-        patient = Patient(
-            user_id=user.id,
-            full_name=full_name,
-            contact=contact
-        )
-        db.session.add(patient)
-        db.session.commit()
-        
-        flash('Registration successful! Please login.', 'success')
-        return redirect(url_for('login'))
-    
-    return render_template('register.html')
-
-@app.route('/dashboard')
-@login_required
-def dashboard():
-    if current_user.role == 'admin':
-        return redirect(url_for('admin_dashboard'))
-    elif current_user.role == 'doctor':
-        return redirect(url_for('doctor_dashboard'))
-    elif current_user.role == 'patient':
-        return redirect(url_for('patient_dashboard'))
-
-@app.route('/logout')
-@login_required
-def logout():
-    logout_user()
-    flash('Logged out successfully', 'success')
-    return redirect(url_for('login'))
-
-if __name__ == '__main__':
-    init_db()
-    app.run(debug=True)
+            print("Admin created: username=admin password=admin123")

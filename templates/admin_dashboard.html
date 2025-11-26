@@ -1,0 +1,54 @@
+{% extends "base.html" %}
+{% block content %}
+  <h3>Admin Dashboard</h3>
+  <div class="mb-3">
+    <a class="btn btn-primary" href="{{ url_for('create_doctor') }}">Add Doctor</a>
+  </div>
+
+  <h5>Doctors</h5>
+  <table class="table table-sm">
+    <thead><tr><th>ID</th><th>Name</th><th>Specialization</th><th>Actions</th></tr></thead>
+    <tbody>
+      {% for d in doctors %}
+      <tr>
+        <td>{{ d.id }}</td>
+        <td>{{ d.fullname }}</td>
+        <td>{{ d.specialization }}</td>
+        <td>
+          <form style="display:inline" method="post" action="{{ url_for('delete_doctor', doctor_id=d.id) }}">
+            <button class="btn btn-sm btn-danger" type="submit">Delete</button>
+            <a class="btn btn-sm btn-warning" href="{{ url_for('update_doctor', doctor_id=d.id) }}">edit</a>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h5>Patients</h5>
+  <table class="table table-sm">
+    <thead><tr><th>ID</th><th>Name</th><th>Contact</th></tr></thead>
+    <tbody>
+      {% for p in patients %}
+      <tr><td>{{ p.id }}</td><td>{{ p.fullname }}</td><td>{{ p.contact }}</td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h5>All Appointments</h5>
+  <table class="table table-sm">
+    <thead><tr><th>ID</th><th>Patient</th><th>Doctor</th><th>Date</th><th>Time</th><th>Status</th></tr></thead>
+    <tbody>
+      {% for a in appointments %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.patient_id }}</td>
+        <td>{{ a.doctor_id }}</td>
+        <td>{{ a.date }}</td>
+        <td>{{ a.time }}</td>
+        <td>{{ a.status }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}

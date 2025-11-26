@@ -1,0 +1,15 @@
+{% extends "base.html" %}
+{% block content %}
+  <h4>Book appointment with Dr. {{ doctor.fullname }} ({{ doctor.specialization }})</h4>
+  <form method="post">
+    <div class="mb-2">
+      <label class="form-label">Date (YYYY-MM-DD)</label>
+      <input class="form-control" name="date" placeholder="2025-09-01" required>
+    </div>
+    <div class="mb-2">
+      <label class="form-label">Time slot (e.g. 09:00-09:30)</label>
+      <input class="form-control" name="time" placeholder="09:00-09:30" required>
+    </div>
+    <button class="btn btn-success" type="submit">Book</button>
+  </form>
+{% endblock %}

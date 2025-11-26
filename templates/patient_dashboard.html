@@ -1,0 +1,48 @@
+{% extends "base.html" %}
+{% block content %}
+  <h3>Patient Dashboard</h3>
+
+  <h5>Your Info</h5>
+  <p>Name: {{ patient.fullname }} | Contact: {{ patient.contact }}</p>
+  <a class="btn btn-sm btn-warning" href="{{ url_for('patient_edit') }}">Edit Profile</a>
+
+  <h5>Book Appointment</h5>
+  <p>Choose a doctor from list below and click Book.</p>
+  <table class="table table-sm">
+    <thead><tr><th>Name</th><th>Specialization</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for d in doctors %}
+      <tr>
+        <td>{{ d.fullname }}</td>
+        <td>{{ d.specialization }}</td>
+        <td><a class="btn btn-sm btn-primary" href="{{ url_for('book', doctor_id=d.id) }}">Book</a></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  <h5>Your Appointments</h5>
+  <table class="table table-sm">
+    <thead><tr><th>ID</th><th>Doctor</th><th>Date</th><th>Time</th><th>Status</th><th>Action</th></tr></thead>
+    <tbody>
+      {% for a in appts %}
+      <tr>
+        <td>{{ a.id }}</td>
+        <td>{{ a.doctor_id }}</td>
+        <td>{{ a.date }}</td>
+        <td>{{ a.time }}</td>
+        <td>{{ a.status }}</td>
+        <td>
+          {% if a.status == 'Booked' %}
+            <form method="post" action="{{ url_for('cancel_appointment', appt_id=a.id) }}">
+              <button class="btn btn-sm btn-warning" type="submit">Cancel</button>
+            </form>
+          {% else %}
+            -
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% endblock %}
