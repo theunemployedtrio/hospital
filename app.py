@@ -2,9 +2,7 @@
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from models import db, User, Doctor, Patient, Appointment, Treatment, Department, create_db_and_admin
 from datetime import datetime
-#import os
 
-#BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'change_this_secret'  # change before final submission
@@ -320,7 +318,7 @@ def doctor_dashboard():
     appts = Appointment.query.filter_by(doctor_id=doctor.id).order_by(Appointment.date).all()
     return render_template('doctor_dashboard.html', doctor=doctor, appts=appts)
 
-
+'''
 @app.route('/doctor/availability/<int:doctor_id>', methods=['GET', 'POST'])
 def doctor_availability(doctor_id):
     guard = login_required('doctor')()
@@ -334,6 +332,22 @@ def doctor_availability(doctor_id):
         flash('Availability updated.')
         return redirect(url_for('doctor_dashboard'))
     return render_template('doctor_availability.html', doctor=doc)
+'''
+@app.route('/doctor/availability/<int:doctor_id>', methods=['GET', 'POST'])
+def doctor_availability(doctor_id):
+    guard = login_required('doctor')()
+    if guard: return guard
+
+    doc = Doctor.query.get(doctor_id)
+
+    if request.method == 'POST':
+        slots = request.form.get('slots', '')
+        doc.availability = slots
+        db.session.commit()
+        flash("Availability updated.")
+        return redirect(url_for('doctor_dashboard'))
+
+    return render_template("doctor_availability.html", doctor=doc)
 
 
 @app.route('/doctor/mark_complete/<int:appt_id>', methods=['GET', 'POST'])
