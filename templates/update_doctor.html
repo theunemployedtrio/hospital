@@ -1,0 +1,15 @@
+{% extends 'base.html' %}
+{% block content %}
+<div class="col-md-6">
+    <h3>Update Doctor</h3>
+    <form method="POST">
+        <label class="form-label">Full Name</label>
+        <input type="text" class="form-control" name="fullname" value="{{ doctor.fullname }}" required>
+
+        <label class="form-label mt-2">Specialization</label>
+        <input type="text" class="form-control" name="specialization" value="{{ doctor.specialization }}" required>
+
+        <button class="btn btn-primary mt-3">Update</button>
+    </form>
+</div>
+{% endblock %}
